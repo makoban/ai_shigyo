@@ -33,34 +33,22 @@
   </header>
 
   <!-- Hero -->
-  <section class="hero">
+  <section class="hero" style="position:relative; overflow:hidden;">
     <div class="container">
       <div class="hero__content">
         <div class="hero__badge">
           <span class="hero__badge-dot"></span>
           AI-Powered Professional Services Analysis
         </div>
-        <p class="hero__catchcopy">士業の開業・移転を検討中の方必見！</p>
+        <p class="hero__catchcopy">税理士から弁護士まで、6士業を一括比較！</p>
         <h1 class="hero__title">AI士業商圏<span>レポート</span></h1>
         <p class="hero__subtitle">
-          士業タイプとエリアを選ぶだけ。<br>
-          AIが政府統計データをもとに、開業エリアの商圏レポートを自動生成します。
+          エリアを選ぶだけ。AIが政府統計データをもとに、<br>
+          6種類の士業の商圏レポートを一括生成します。
         </p>
 
         <!-- Search Card -->
         <div class="search-card">
-          <label class="search__label" for="shigyo-type-select">⚖️ 分析したい士業を選択してください</label>
-          <div style="margin-bottom:12px;">
-            <select id="shigyo-type-select" style="width:100%; padding:12px 16px; border-radius:12px; border:1px solid rgba(99,102,241,0.3); background:rgba(15,23,42,0.8); color:#e2e8f0; font-size:15px; outline:none; appearance:none; cursor:pointer; background-image:url('data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 12 12%22%3E%3Cpath d=%22M2 4l4 4 4-4%22 fill=%22none%22 stroke=%22%236366f1%22 stroke-width=%222%22/%3E%3C/svg%3E'); background-repeat:no-repeat; background-position:right 16px center;">
-              <option value="">-- 士業を選んでください --</option>
-              <option value="税理士事務所">税理士事務所</option>
-              <option value="弁護士事務所">弁護士事務所（法律事務所）</option>
-              <option value="社会保険労務士事務所">社会保険労務士事務所</option>
-              <option value="行政書士事務所">行政書士事務所</option>
-              <option value="司法書士事務所">司法書士事務所</option>
-              <option value="公認会計士事務所">公認会計士事務所</option>
-            </select>
-          </div>
           <label class="search__label" for="area-input">📍 分析したいエリア名を入力してください</label>
           <div class="search__input-wrap">
             <div class="search__autocomplete">
@@ -91,8 +79,8 @@
           </div>
           <div class="feature-item">
             <div class="feature-item__icon">⚖️</div>
-            <div class="feature-item__title">士業特化分析</div>
-            <div class="feature-item__desc">競合密度・顧客層を推定</div>
+            <div class="feature-item__title">全6士業を比較</div>
+            <div class="feature-item__desc">競合密度・適性スコアを一括推定</div>
           </div>
           <div class="feature-item">
             <div class="feature-item__icon">📊</div>
@@ -109,10 +97,11 @@
           </div>
           <div class="pricing-info__paid">
             <span class="pricing-info__badge pricing-info__badge--paid">¥300</span>
-            同業事務所数・競合密度・顧客層分析・開業適性スコア・集客チャネル・Excel出力
+            全6士業の競合密度・顧客層・開業適性スコアを一括比較・集客チャネル・Excel出力
           </div>
         </div>
       </div>
+      <img src="hero-woman.png" alt="士業商圏分析" class="hero__image" style="max-width:300px; position:absolute; right:0; bottom:0; opacity:0.9; pointer-events:none;">
     </div>
   </section>
 

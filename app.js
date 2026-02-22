@@ -10,7 +10,7 @@ var SUPABASE_ANON_KEY = 'sb_publishable_l5yNWlXOZAHABwlbEalGng_R8zioydf';
 var supabaseClient = null;
 var currentUser = null;
 
-// ---- 士業 Types ----
+// ---- 士業 Types (参照用・履歴表示用に残す) ----
 var SHIGYO_TYPES = [
   { name: '税理士事務所', code: '7242', icon: '📊' },
   { name: '弁護士事務所', code: '7211', icon: '⚖️' },
@@ -37,7 +37,6 @@ var PREFECTURE_CODES = {
 // ---- State ----
 var analysisData = null;
 var currentArea = null;
-var currentShigyoType = null;
 var isPurchased = false;
 var _analysisRunning = false;
 
@@ -64,9 +63,6 @@ var _pendingVerifySessionId = null;
       if (savedAnalysis && savedArea) {
         analysisData = JSON.parse(savedAnalysis);
         currentArea = JSON.parse(savedArea);
-        if (analysisData && analysisData.shigyoType) {
-          currentShigyoType = analysisData.shigyoType;
-        }
       }
     } catch (e) { /* ignore */ }
     // 認証完了を待ってからverifyPurchaseを実行
@@ -446,13 +442,6 @@ async function startAnalysis() {
   var input = areaInput.value.trim();
   if (!input) { showError('エリア名を入力してください'); return; }
 
-  // 士業種別の選択チェック
-  var shigyoSelect = document.getElementById('shigyo-type-select');
-  if (!shigyoSelect || !shigyoSelect.value) {
-    showError('士業の種別を選択してください');
-    return;
-  }
-
   hideError();
   var candidates = searchArea(input);
 
@@ -497,24 +486,8 @@ async function runAreaAnalysis(area) {
   _analysisRunning = true;
   currentArea = area;
 
-  // 士業種別を取得
-  var shigyoSelect = document.getElementById('shigyo-type-select');
-  var selectedCode = shigyoSelect ? shigyoSelect.value : '';
-  currentShigyoType = null;
-  for (var ti = 0; ti < SHIGYO_TYPES.length; ti++) {
-    if (SHIGYO_TYPES[ti].code === selectedCode) {
-      currentShigyoType = SHIGYO_TYPES[ti];
-      break;
-    }
-  }
-  if (!currentShigyoType) {
-    showError('士業の種別を選択してください');
-    _analysisRunning = false;
-    return;
-  }
-
   // 購入チェック・DB読み込みを全体try-catchで囲む
-  var purchaseKey = area.fullLabel + '__' + currentShigyoType.code;
+  var purchaseKey = area.fullLabel;
   try {
     isPurchased = await isAreaPurchasedAsync(purchaseKey);
 
@@ -541,9 +514,9 @@ async function runAreaAnalysis(area) {
   setLoading(true);
   clearLogs();
 
-  addLog('⚖️ 士業商圏分析を開始します...', 'info');
+  addLog('⚖️ 全士業商圏分析を開始します...', 'info');
   addLog('対象エリア: ' + area.fullLabel, 'info');
-  addLog('士業種別: ' + currentShigyoType.name, 'info');
+  addLog('分析対象: 税理士・弁護士・社労士・行政書士・司法書士・公認会計士 の6士業', 'info');
 
   try {
     // Step 1: 統計データ取得
@@ -554,11 +527,11 @@ async function runAreaAnalysis(area) {
 
     completeStep('step-data');
 
-    // Step 2: AI士業商圏分析
+    // Step 2: AI士業商圏分析（全6士業一括）
     activateStep('step-ai');
-    addLog('AIが士業商圏データを分析中...', 'info');
+    addLog('AIが全6士業の商圏データを分析中...', 'info');
 
-    var shigyoPrompt = buildShigyoPrompt(area, estatPop, currentShigyoType);
+    var shigyoPrompt = buildShigyoPrompt(area, estatPop);
     var shigyoRaw = await callGemini(shigyoPrompt);
     var marketData = parseJSON(shigyoRaw);
 
@@ -570,7 +543,7 @@ async function runAreaAnalysis(area) {
       marketData.population.source = estatPop.source;
     }
 
-    addLog('→ ' + area.fullLabel + ' × ' + currentShigyoType.name + ' 分析完了', 'success');
+    addLog('→ ' + area.fullLabel + ' 全士業分析完了', 'success');
     completeStep('step-ai');
 
     // Step 3: レポート生成
@@ -579,7 +552,6 @@ async function runAreaAnalysis(area) {
 
     analysisData = {
       area: area,
-      shigyoType: currentShigyoType,
       shigyo: marketData,
       timestamp: new Date().toISOString(),
       data_source: '政府統計 + AI'
@@ -606,8 +578,8 @@ async function runAreaAnalysis(area) {
   }
 }
 
-// ---- Build Shigyo Prompt ----
-function buildShigyoPrompt(area, estatPop, shigyoType) {
+// ---- Build Shigyo Prompt (全6士業一括比較版) ----
+function buildShigyoPrompt(area, estatPop) {
   var pref = area.prefecture || '不明';
   var city = area.city || '';
   var estatInfo = '';
@@ -619,25 +591,29 @@ function buildShigyoPrompt(area, estatPop, shigyoType) {
   }
 
   return 'あなたは日本の士業（専門家・士業事務所）の開業・市場分析の専門家です。\n' +
-    '以下の地域に「' + shigyoType.name + '」を開業することを検討している方向けに、商圏分析データを提供してください。\n\n' +
+    '以下の地域における6種類の士業（税理士・弁護士・社会保険労務士・行政書士・司法書士・公認会計士）について、一括で商圏比較分析を提供してください。\n\n' +
     '対象エリア: ' + pref + ' ' + city + '\n' +
-    '士業種別: ' + shigyoType.name + '（産業分類コード: ' + shigyoType.code + '）\n' +
     estatInfo + '\n' +
-    'できる限り正確な数値を提供してください。正確な数値が不明な場合は、合理的な推計値を提供し、sourceフィールドに「推計」と明記してください。\n\n' +
+    '各士業について以下を推定してください:\n' +
+    '・推計事務所数、人口1万人あたりの事務所密度\n' +
+    '・競合レベル（低/中/高/飽和）\n' +
+    '・推定市場規模（万円）\n' +
+    '・主要ターゲット顧客層\n' +
+    '・開業適性スコア（100点満点）\n' +
+    '・推奨集客チャネル\n\n' +
     '重要ルール:\n' +
-    '・estimated_offices は当該エリアの推計事務所数（実数）で返してください\n' +
-    '・offices_per_10000_population は人口1万人あたりの事務所数（小数点1桁）で返してください\n' +
-    '・avg_revenue_per_office, market_size_estimate は万円単位の数値で返してください\n' +
-    '・suitability_score 内の各スコアは100点満点で返してください\n' +
-    '・パーセンテージは数値のみ（例: 25.3）で返してください\n' +
-    '・shigyo_summary は1000文字程度の日本語テキストで、当該士業の商圏特性・開業メリット/デメリット・競合状況・市場機会を具体的に記述してください\n' +
-    '・marketing_channels のチャネルは士業に特化した集客手法を提案してください\n' +
-    '・client_demographics は当該士業種別のターゲット顧客の特性を詳しく記述してください\n\n' +
+    '・各数値は可能な限り正確に。不明な場合は合理的な推計値を提供\n' +
+    '・overall_summary は当該エリアの士業全体の商圏特性を500文字程度で記述\n' +
+    '・各士業のsummaryは200文字程度で特徴・メリット/デメリットを記述\n' +
+    '・recommended_top3 は開業に最も適した士業を上位3つ選んで理由付きで記述\n' +
+    '・estimated_offices, market_size_estimate, avg_revenue_per_office は数値のみ（万円単位）\n' +
+    '・offices_per_10000 は小数点1桁の数値\n' +
+    '・suitability_score は0〜100の整数\n' +
+    '・individual_client_pct + corporate_client_pct の合計は100になるようにしてください\n\n' +
     '以下のJSON形式で回答してください。マークダウンのコードブロックで囲まず、純粋なJSONのみ返してください:\n' +
     JSON.stringify({
       area_name: pref + ' ' + city,
-      shigyo_type: shigyoType.name,
-      shigyo_summary: '（1000文字程度の士業商圏分析: 当該士業の商圏特性・開業メリット/デメリット・競合状況・市場機会を具体的に記述）',
+      overall_summary: '（500文字程度: 当該エリアの士業全体の商圏特性・経済環境・人口動態と士業需要の関係）',
       population: {
         total_population: 0,
         households: 0,
@@ -645,75 +621,127 @@ function buildShigyoPrompt(area, estatPop, shigyoType) {
         growth_rate: '+0.0%',
         source: 'データソース名'
       },
-      competitor_analysis: {
-        estimated_offices: 0,
-        offices_per_10000_population: 0,
-        national_avg_per_10000: 0,
-        prefecture_avg_per_10000: 0,
-        competition_level: '低/中/高/飽和',
-        total_professionals: 0,
-        avg_revenue_per_office: 0,
-        market_size_estimate: 0,
-        nearby_major_firms: ['事務所名1', '事務所名2'],
-        differentiation_opportunities: ['差別化ポイント1', '差別化ポイント2']
-      },
-      client_demographics: {
-        individual_clients: {
-          count: 0,
-          pct: 0,
-          avg_fee: 0,
-          description: '個人顧客の特性・ニーズ'
+      professions: [
+        {
+          name: '税理士事務所',
+          icon: '📊',
+          estimated_offices: 0,
+          offices_per_10000: 0,
+          competition_level: '低/中/高/飽和',
+          market_size_estimate: 0,
+          avg_revenue_per_office: 0,
+          individual_client_pct: 0,
+          corporate_client_pct: 0,
+          primary_needs: ['ニーズ1', 'ニーズ2'],
+          seasonal_demand: '繁忙期の説明',
+          suitability_score: 0,
+          summary: '（200文字程度の分析）',
+          best_channel: '最も推奨する集客チャネル',
+          channels: [
+            { name: 'チャネル名', score: 0, detail: '具体策' }
+          ]
         },
-        corporate_clients: {
-          count: 0,
-          pct: 0,
-          avg_fee: 0,
-          description: '法人顧客の特性・ニーズ'
+        {
+          name: '弁護士事務所',
+          icon: '⚖️',
+          estimated_offices: 0,
+          offices_per_10000: 0,
+          competition_level: '低/中/高/飽和',
+          market_size_estimate: 0,
+          avg_revenue_per_office: 0,
+          individual_client_pct: 0,
+          corporate_client_pct: 0,
+          primary_needs: ['ニーズ1', 'ニーズ2'],
+          seasonal_demand: '繁忙期の説明',
+          suitability_score: 0,
+          summary: '（200文字程度の分析）',
+          best_channel: '最も推奨する集客チャネル',
+          channels: [
+            { name: 'チャネル名', score: 0, detail: '具体策' }
+          ]
         },
-        primary_needs: ['ニーズ1', 'ニーズ2', 'ニーズ3'],
-        growth_sectors: ['成長分野1', '成長分野2'],
-        seasonal_demand: '繁忙期の説明（例: 税理士なら確定申告期など）'
-      },
-      suitability_score: {
-        overall_score: 0,
-        population_score: 0,
-        competition_score: 0,
-        demand_score: 0,
-        accessibility_score: 0,
-        growth_score: 0,
-        grade: 'S/A/B/C/D',
-        ai_recommendation: '開業に関するAI総合判定（200文字程度）'
-      },
-      marketing_channels: {
-        channels: [
-          {
-            name: '紹介・口コミ',
-            score: 0,
-            detail: '具体的な施策',
-            reason: '推奨理由'
-          },
-          {
-            name: 'Web集客（SEO）',
-            score: 0,
-            detail: '具体的な施策',
-            reason: '推奨理由'
-          },
-          {
-            name: '士業ポータルサイト',
-            score: 0,
-            detail: '具体的な施策',
-            reason: '推奨理由'
-          },
-          {
-            name: 'セミナー・勉強会',
-            score: 0,
-            detail: '具体的な施策',
-            reason: '推奨理由'
-          }
-        ],
-        best_channel: '最も推奨するチャネル名',
-        strategy_summary: '集客戦略の提言（200文字程度）'
-      }
+        {
+          name: '社会保険労務士事務所',
+          icon: '🏢',
+          estimated_offices: 0,
+          offices_per_10000: 0,
+          competition_level: '低/中/高/飽和',
+          market_size_estimate: 0,
+          avg_revenue_per_office: 0,
+          individual_client_pct: 0,
+          corporate_client_pct: 0,
+          primary_needs: ['ニーズ1', 'ニーズ2'],
+          seasonal_demand: '繁忙期の説明',
+          suitability_score: 0,
+          summary: '（200文字程度の分析）',
+          best_channel: '最も推奨する集客チャネル',
+          channels: [
+            { name: 'チャネル名', score: 0, detail: '具体策' }
+          ]
+        },
+        {
+          name: '行政書士事務所',
+          icon: '📝',
+          estimated_offices: 0,
+          offices_per_10000: 0,
+          competition_level: '低/中/高/飽和',
+          market_size_estimate: 0,
+          avg_revenue_per_office: 0,
+          individual_client_pct: 0,
+          corporate_client_pct: 0,
+          primary_needs: ['ニーズ1', 'ニーズ2'],
+          seasonal_demand: '繁忙期の説明',
+          suitability_score: 0,
+          summary: '（200文字程度の分析）',
+          best_channel: '最も推奨する集客チャネル',
+          channels: [
+            { name: 'チャネル名', score: 0, detail: '具体策' }
+          ]
+        },
+        {
+          name: '司法書士事務所',
+          icon: '🏛️',
+          estimated_offices: 0,
+          offices_per_10000: 0,
+          competition_level: '低/中/高/飽和',
+          market_size_estimate: 0,
+          avg_revenue_per_office: 0,
+          individual_client_pct: 0,
+          corporate_client_pct: 0,
+          primary_needs: ['ニーズ1', 'ニーズ2'],
+          seasonal_demand: '繁忙期の説明',
+          suitability_score: 0,
+          summary: '（200文字程度の分析）',
+          best_channel: '最も推奨する集客チャネル',
+          channels: [
+            { name: 'チャネル名', score: 0, detail: '具体策' }
+          ]
+        },
+        {
+          name: '公認会計士事務所',
+          icon: '🔢',
+          estimated_offices: 0,
+          offices_per_10000: 0,
+          competition_level: '低/中/高/飽和',
+          market_size_estimate: 0,
+          avg_revenue_per_office: 0,
+          individual_client_pct: 0,
+          corporate_client_pct: 0,
+          primary_needs: ['ニーズ1', 'ニーズ2'],
+          seasonal_demand: '繁忙期の説明',
+          suitability_score: 0,
+          summary: '（200文字程度の分析）',
+          best_channel: '最も推奨する集客チャネル',
+          channels: [
+            { name: 'チャネル名', score: 0, detail: '具体策' }
+          ]
+        }
+      ],
+      recommended_top3: [
+        { rank: 1, name: '税理士事務所', score: 0, reason: '推奨理由（100文字程度）' },
+        { rank: 2, name: '弁護士事務所', score: 0, reason: '推奨理由' },
+        { rank: 3, name: '行政書士事務所', score: 0, reason: '推奨理由' }
+      ]
     }, null, 2);
 }
 
@@ -732,11 +760,10 @@ function parseJSON(text) {
   }
 }
 
-// ---- Render Results ----
+// ---- Render Results (全6士業一括比較版) ----
 function renderResults(data, purchased) {
   var m = data.shigyo;
   var area = data.area;
-  var shigyoType = data.shigyoType || currentShigyoType || { name: '士業事務所', icon: '⚖️' };
   var html = '';
 
   var sourceBadge = '<span style="background: linear-gradient(135deg, #6366f1, #8b5cf6); color:#fff; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700;">📊 実データ + AI分析</span>';
@@ -744,15 +771,15 @@ function renderResults(data, purchased) {
   // エリア情報カード
   html += '<div class="result-card result-card--company">' +
     '<div class="result-card__header">' +
-    '<div class="result-card__icon">' + (shigyoType.icon || '⚖️') + '</div>' +
+    '<div class="result-card__icon">⚖️</div>' +
     '<div>' +
     '<div class="result-card__title">' + escapeHtml(area.fullLabel) + ' 士業商圏分析</div>' +
-    '<div class="result-card__subtitle">AI士業商圏レポート ' + sourceBadge + '</div>' +
+    '<div class="result-card__subtitle">全6士業 一括比較レポート ' + sourceBadge + '</div>' +
     '</div></div>' +
     '<div class="result-card__body">' +
     '<table class="data-table">' +
     '<tr><th>分析対象</th><td>' + escapeHtml(area.fullLabel) + '</td></tr>' +
-    '<tr><th>士業種別</th><td>' + escapeHtml(shigyoType.name) + '</td></tr>' +
+    '<tr><th>対象士業</th><td>税理士・弁護士・社労士・行政書士・司法書士・公認会計士</td></tr>' +
     '<tr><th>分析日時</th><td>' + new Date().toLocaleString('ja-JP') + '</td></tr>' +
     '</table>' +
     '</div></div>';
@@ -778,214 +805,144 @@ function renderResults(data, purchased) {
   var paidClass = purchased ? '' : ' blurred-section';
   var paidOverlay = purchased ? '' : '<div class="blur-overlay"><div class="blur-overlay__inner"><span class="blur-overlay__icon">🔒</span><span>購入すると表示されます</span></div></div>';
 
-  // ② AI士業商圏分析（有料）
-  if (m.shigyo_summary) {
+  // ② エリア総評（有料）
+  if (m.overall_summary) {
     html += '<div class="result-card' + paidClass + '" data-section="paid">' +
       '<div class="result-card__header"><div class="result-card__icon">🤖</div>' +
-      '<div><div class="result-card__title">② AI士業商圏分析</div>' +
+      '<div><div class="result-card__title">② エリア全体総評</div>' +
       '<div class="result-card__subtitle">' + (purchased ? '' : '<span class="badge-paid">有料</span>') + '</div></div></div>' +
       '<div class="result-card__body">' + paidOverlay +
-      '<div class="market-summary">' + escapeHtml(m.shigyo_summary).replace(/\n/g, '<br>') + '</div>' +
+      '<div class="market-summary">' + escapeHtml(m.overall_summary).replace(/\n/g, '<br>') + '</div>' +
       '</div></div>';
   }
 
-  // ③ 同業事務所数・競合状況（有料）
-  if (m.competitor_analysis) {
-    var ca = m.competitor_analysis;
-    var compLevelColor = {
-      '低': '#10b981', '中': '#f59e0b', '高': '#f97316', '飽和': '#ef4444'
-    };
-    var clColor = compLevelColor[ca.competition_level] || '#94a3b8';
-
+  // ③ 開業適性ランキング TOP3（有料）
+  if (m.recommended_top3 && m.recommended_top3.length > 0) {
+    var rankMedals = ['🥇', '🥈', '🥉'];
+    var rankColors = ['#f59e0b', '#94a3b8', '#cd7f32'];
     html += '<div class="result-card' + paidClass + '" data-section="paid">' +
-      '<div class="result-card__header"><div class="result-card__icon">🏛️</div>' +
-      '<div><div class="result-card__title">③ 同業事務所数・競合状況</div>' +
-      '<div class="result-card__subtitle">' + (purchased ? '' : '<span class="badge-paid">有料</span>') + '</div></div></div>' +
-      '<div class="result-card__body">' + paidOverlay +
-      '<div class="stat-grid">' +
-      '<div class="stat-box"><div class="stat-box__value">' + formatNumber(ca.estimated_offices) + '</div><div class="stat-box__label">推計事務所数（件）</div></div>' +
-      '<div class="stat-box"><div class="stat-box__value">' + (ca.offices_per_10000_population || '—') + '</div><div class="stat-box__label">1万人あたり事務所数</div></div>' +
-      '<div class="stat-box"><div class="stat-box__value">' + (ca.national_avg_per_10000 || '—') + '</div><div class="stat-box__label">全国平均（1万人あたり）</div></div>' +
-      '<div class="stat-box"><div class="stat-box__value">' + (ca.total_professionals || '—') + '</div><div class="stat-box__label">推計従事者数（人）</div></div>' +
-      '</div>' +
-      '<table class="data-table" style="margin-top:8px;">' +
-      '<tr><th>競合レベル</th><td><span class="highlight" style="color:' + clColor + ';">' + escapeHtml(ca.competition_level || '—') + '</span></td></tr>' +
-      '<tr><th>都道府県平均（1万人あたり）</th><td>' + (ca.prefecture_avg_per_10000 || '—') + '</td></tr>' +
-      '<tr><th>事務所あたり平均年商</th><td>' + (ca.avg_revenue_per_office ? formatNumber(ca.avg_revenue_per_office) + ' 万円' : '—') + '</td></tr>' +
-      '<tr><th>市場規模推計</th><td>' + (ca.market_size_estimate ? formatNumber(ca.market_size_estimate) + ' 万円' : '—') + '</td></tr>' +
-      '</table>';
-
-    if (ca.nearby_major_firms && ca.nearby_major_firms.length > 0) {
-      html += '<div style="margin-top:12px;"><div style="font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-secondary);">近隣主要事務所</div>';
-      html += '<div class="tag-list">';
-      ca.nearby_major_firms.forEach(function(firm) {
-        html += '<span class="tag">🏛️ ' + escapeHtml(firm) + '</span>';
-      });
-      html += '</div></div>';
-    }
-
-    if (ca.differentiation_opportunities && ca.differentiation_opportunities.length > 0) {
-      html += '<div style="margin-top:12px;"><div style="font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-secondary);">差別化の機会</div>';
-      html += '<div class="tag-list">';
-      ca.differentiation_opportunities.forEach(function(opp) {
-        html += '<span class="tag" style="border-color:rgba(99,102,241,0.3); color:#6366f1;">✅ ' + escapeHtml(opp) + '</span>';
-      });
-      html += '</div></div>';
-    }
-
-    html += '</div></div>';
-  }
-
-  // ④ 顧客層分析（有料）
-  if (m.client_demographics) {
-    var cd = m.client_demographics;
-    var indPct = cd.individual_clients ? (cd.individual_clients.pct || 0) : 0;
-    var corpPct = cd.corporate_clients ? (cd.corporate_clients.pct || 0) : 0;
-
-    html += '<div class="result-card' + paidClass + '" data-section="paid">' +
-      '<div class="result-card__header"><div class="result-card__icon">👔</div>' +
-      '<div><div class="result-card__title">④ 顧客層分析</div>' +
+      '<div class="result-card__header"><div class="result-card__icon">🏆</div>' +
+      '<div><div class="result-card__title">③ 開業適性ランキング TOP3</div>' +
       '<div class="result-card__subtitle">' + (purchased ? '' : '<span class="badge-paid">有料</span>') + '</div></div></div>' +
       '<div class="result-card__body">' + paidOverlay;
 
-    // 個人 vs 法人の割合バー
-    html += '<div style="margin-bottom:16px;">' +
-      '<div style="font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-secondary);">顧客構成（個人 vs 法人）</div>' +
-      '<div style="display:flex; height:28px; border-radius:8px; overflow:hidden; font-size:11px; font-weight:700;">' +
-      '<div style="width:' + indPct + '%; background:#6366f1; display:flex; align-items:center; justify-content:center; color:#fff;">' + (indPct >= 15 ? '個人 ' + indPct + '%' : '') + '</div>' +
-      '<div style="width:' + corpPct + '%; background:#8b5cf6; display:flex; align-items:center; justify-content:center; color:#fff;">' + (corpPct >= 15 ? '法人 ' + corpPct + '%' : '') + '</div>' +
-      '</div>' +
-      '<div style="display:flex; gap:16px; margin-top:4px; font-size:10px; color:var(--text-muted);">' +
-      '<span>🟣 個人 ' + indPct + '%</span><span>🟤 法人 ' + corpPct + '%</span></div></div>';
-
-    // 個人客詳細
-    if (cd.individual_clients) {
-      var ic = cd.individual_clients;
-      html += '<div style="margin-bottom:12px; padding:10px; border-radius:8px; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.2);">' +
-        '<div style="font-size:13px; font-weight:700; color:#6366f1; margin-bottom:4px;">🧑 個人顧客</div>' +
-        '<table class="data-table">' +
-        '<tr><th>推計件数</th><td>' + formatNumber(ic.count) + ' 件/年</td></tr>' +
-        '<tr><th>平均報酬</th><td>' + (ic.avg_fee ? formatNumber(ic.avg_fee) + ' 円' : '—') + '</td></tr>' +
-        '</table>' +
-        (ic.description ? '<div style="font-size:12px; color:var(--text-secondary); margin-top:6px;">' + escapeHtml(ic.description) + '</div>' : '') +
+    m.recommended_top3.forEach(function(item, idx) {
+      var rColor = rankColors[idx] || '#94a3b8';
+      var rMedal = rankMedals[idx] || (idx + 1) + '位';
+      var rScore = item.score || 0;
+      html += '<div style="margin-bottom:12px; padding:14px; border-radius:10px; background:rgba(15,23,42,0.5); border:1px solid rgba(99,102,241,0.2);">' +
+        '<div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">' +
+        '<span style="font-size:24px;">' + rMedal + '</span>' +
+        '<div style="flex:1;">' +
+        '<div style="font-weight:700; font-size:15px; color:var(--text-primary);">' + escapeHtml(item.name || '') + '</div>' +
+        '<div style="font-size:11px; color:var(--text-muted);">開業適性スコア</div>' +
+        '</div>' +
+        '<div style="font-size:28px; font-weight:900; color:' + rColor + ';">' + rScore + '<span style="font-size:12px; color:var(--text-muted);">点</span></div>' +
+        '</div>' +
+        '<div style="height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden; margin-bottom:6px;">' +
+        '<div style="height:100%; width:' + rScore + '%; background:linear-gradient(90deg,' + rColor + ',#6366f1); border-radius:3px;"></div>' +
+        '</div>' +
+        (item.reason ? '<div style="font-size:12px; color:var(--text-secondary);">💡 ' + escapeHtml(item.reason) + '</div>' : '') +
         '</div>';
-    }
-
-    // 法人客詳細
-    if (cd.corporate_clients) {
-      var cc = cd.corporate_clients;
-      html += '<div style="margin-bottom:12px; padding:10px; border-radius:8px; background:rgba(139,92,246,0.08); border:1px solid rgba(139,92,246,0.2);">' +
-        '<div style="font-size:13px; font-weight:700; color:#8b5cf6; margin-bottom:4px;">🏢 法人顧客</div>' +
-        '<table class="data-table">' +
-        '<tr><th>推計件数</th><td>' + formatNumber(cc.count) + ' 件/年</td></tr>' +
-        '<tr><th>平均報酬</th><td>' + (cc.avg_fee ? formatNumber(cc.avg_fee) + ' 円' : '—') + '</td></tr>' +
-        '</table>' +
-        (cc.description ? '<div style="font-size:12px; color:var(--text-secondary); margin-top:6px;">' + escapeHtml(cc.description) + '</div>' : '') +
-        '</div>';
-    }
-
-    // 主要ニーズ
-    if (cd.primary_needs && cd.primary_needs.length > 0) {
-      html += '<div style="margin-top:8px;"><div style="font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-secondary);">主要ニーズ</div>';
-      html += '<div class="tag-list">';
-      cd.primary_needs.forEach(function(need) {
-        html += '<span class="tag" style="border-color:rgba(99,102,241,0.3); color:#6366f1;">💡 ' + escapeHtml(need) + '</span>';
-      });
-      html += '</div></div>';
-    }
-
-    // 成長分野
-    if (cd.growth_sectors && cd.growth_sectors.length > 0) {
-      html += '<div style="margin-top:8px;"><div style="font-size:12px; font-weight:600; margin-bottom:6px; color:var(--text-secondary);">成長分野</div>';
-      html += '<div class="tag-list">';
-      cd.growth_sectors.forEach(function(sector) {
-        html += '<span class="tag" style="border-color:rgba(16,185,129,0.3); color:#10b981;">📈 ' + escapeHtml(sector) + '</span>';
-      });
-      html += '</div></div>';
-    }
-
-    // 繁忙期
-    if (cd.seasonal_demand) {
-      html += '<div class="summary-box" style="margin-top:10px;">' +
-        '<div class="summary-box__title">📅 繁忙期・季節需要</div>' +
-        '<div class="summary-box__text">' + escapeHtml(cd.seasonal_demand) + '</div></div>';
-    }
-
+    });
     html += '</div></div>';
   }
 
-  // ⑤ 開業適性スコア（有料）
-  if (m.suitability_score) {
-    var ss = m.suitability_score;
-    var gradeColor = { S: '#10b981', A: '#3b82f6', B: '#f59e0b', C: '#f97316', D: '#ef4444' };
-    var gc = gradeColor[ss.grade] || '#94a3b8';
+  // ④ 士業別詳細比較（有料）
+  if (m.professions && m.professions.length > 0) {
+    var compLevelColor = { '低': '#10b981', '中': '#f59e0b', '高': '#f97316', '飽和': '#ef4444' };
+
+    html += '<div class="result-card' + paidClass + '" data-section="paid">' +
+      '<div class="result-card__header"><div class="result-card__icon">📊</div>' +
+      '<div><div class="result-card__title">④ 士業別詳細比較</div>' +
+      '<div class="result-card__subtitle">' + (purchased ? '' : '<span class="badge-paid">有料</span>') + '</div></div></div>' +
+      '<div class="result-card__body">' + paidOverlay +
+      '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">';
+
+    m.professions.forEach(function(prof) {
+      var compColor = compLevelColor[prof.competition_level] || '#94a3b8';
+      var indPct = prof.individual_client_pct || 0;
+      var corpPct = prof.corporate_client_pct || 0;
+      var score = prof.suitability_score || 0;
+
+      html += '<div style="border:1px solid rgba(99,102,241,0.2); border-radius:12px; padding:16px; background:rgba(15,23,42,0.5);">';
+      html += '<div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">';
+      html += '<span style="font-size:22px;">' + (prof.icon || '⚖️') + '</span>';
+      html += '<div style="font-weight:700; font-size:14px;">' + escapeHtml(prof.name || '') + '</div>';
+      html += '</div>';
+      html += '<div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:12px; margin-bottom:8px;">';
+      html += '<div>事務所数: <strong>' + formatNumber(prof.estimated_offices) + '</strong></div>';
+      html += '<div>競合: <span style="color:' + compColor + '; font-weight:700;">' + escapeHtml(prof.competition_level || '—') + '</span></div>';
+      html += '<div>市場規模: <strong>' + formatNumber(prof.market_size_estimate) + '万円</strong></div>';
+      html += '<div>適性: <strong style="color:#6366f1;">' + score + '点</strong></div>';
+      html += '</div>';
+      // 適性スコアバー
+      html += '<div style="margin-bottom:8px;">';
+      html += '<div style="font-size:10px; color:var(--text-muted); margin-bottom:2px;">開業適性スコア</div>';
+      html += '<div style="height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;">';
+      html += '<div style="height:100%; width:' + score + '%; background:linear-gradient(90deg,#6366f1,#8b5cf6); border-radius:4px;"></div>';
+      html += '</div></div>';
+      // 顧客割合バー
+      if (indPct > 0 || corpPct > 0) {
+        html += '<div style="margin-bottom:8px;">';
+        html += '<div style="font-size:10px; color:var(--text-muted); margin-bottom:2px;">顧客割合（個人/法人）</div>';
+        html += '<div style="display:flex; height:14px; border-radius:4px; overflow:hidden; font-size:9px; font-weight:700;">';
+        html += '<div style="width:' + indPct + '%; background:#6366f1; display:flex; align-items:center; justify-content:center; color:#fff;">' + (indPct >= 20 ? indPct + '%' : '') + '</div>';
+        html += '<div style="width:' + corpPct + '%; background:#8b5cf6; display:flex; align-items:center; justify-content:center; color:#fff;">' + (corpPct >= 20 ? corpPct + '%' : '') + '</div>';
+        html += '</div>';
+        html += '<div style="display:flex; gap:8px; margin-top:2px; font-size:9px; color:var(--text-muted);"><span>個人 ' + indPct + '%</span><span>法人 ' + corpPct + '%</span></div>';
+        html += '</div>';
+      }
+      // 推奨チャネル
+      if (prof.best_channel) {
+        html += '<div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">🏆 推奨: <span style="color:#6366f1; font-weight:600;">' + escapeHtml(prof.best_channel) + '</span></div>';
+      }
+      // サマリー
+      if (prof.summary) {
+        html += '<div style="font-size:11px; color:var(--text-secondary); line-height:1.5; border-top:1px solid rgba(99,102,241,0.1); padding-top:8px;">' + escapeHtml(prof.summary) + '</div>';
+      }
+      html += '</div>';
+    });
+
+    html += '</div></div></div>';
+  }
+
+  // ⑤ 開業適性スコア比較チャート（有料）
+  if (m.professions && m.professions.length > 0) {
+    var sortedProfs = m.professions.slice().sort(function(a, b) {
+      return (b.suitability_score || 0) - (a.suitability_score || 0);
+    });
 
     html += '<div class="result-card' + paidClass + '" data-section="paid">' +
       '<div class="result-card__header"><div class="result-card__icon">🎯</div>' +
-      '<div><div class="result-card__title">⑤ 開業適性スコア</div>' +
-      '<div class="result-card__subtitle">' + (purchased ? '' : '<span class="badge-paid">有料</span>') + '</div></div></div>' +
-      '<div class="result-card__body">' + paidOverlay +
-      '<div style="text-align:center; margin-bottom:16px;">' +
-      '<div style="font-size:60px; font-weight:900; color:' + gc + '; line-height:1;">' + (ss.overall_score || '—') + '</div>' +
-      '<div style="font-size:14px; color:var(--text-muted);">/ 100点</div>' +
-      '<div style="font-size:32px; font-weight:900; color:' + gc + '; margin-top:4px;">グレード ' + escapeHtml(ss.grade || '—') + '</div>' +
-      '</div>' +
-      '<table class="data-table">' +
-      '<tr><th>人口・需要規模</th><td><span class="highlight">' + (ss.population_score || '—') + '</span> 点</td></tr>' +
-      '<tr><th>競合環境</th><td><span class="highlight">' + (ss.competition_score || '—') + '</span> 点</td></tr>' +
-      '<tr><th>需要・ニーズ</th><td><span class="highlight">' + (ss.demand_score || '—') + '</span> 点</td></tr>' +
-      '<tr><th>アクセス・立地</th><td><span class="highlight">' + (ss.accessibility_score || '—') + '</span> 点</td></tr>' +
-      '<tr><th>市場成長性</th><td><span class="highlight">' + (ss.growth_score || '—') + '</span> 点</td></tr>' +
-      '</table>';
-
-    if (ss.ai_recommendation) {
-      html += '<div class="summary-box" style="margin-top:10px;">' +
-        '<div class="summary-box__title">🤖 AI総合判定</div>' +
-        '<div class="summary-box__text">' + escapeHtml(ss.ai_recommendation) + '</div></div>';
-    }
-    html += '</div></div>';
-  }
-
-  // ⑥ 集客チャネル推奨（有料）
-  if (m.marketing_channels) {
-    var mc = m.marketing_channels;
-    var channels = mc.channels || [];
-
-    html += '<div class="result-card' + paidClass + '" data-section="paid">' +
-      '<div class="result-card__header"><div class="result-card__icon">📢</div>' +
-      '<div><div class="result-card__title">⑥ 集客チャネル推奨</div>' +
+      '<div><div class="result-card__title">⑤ 開業適性スコア詳細比較</div>' +
       '<div class="result-card__subtitle">' + (purchased ? '' : '<span class="badge-paid">有料</span>') + '</div></div></div>' +
       '<div class="result-card__body">' + paidOverlay;
 
-    var medals = ['🥇', '🥈', '🥉'];
-    var sortedCh = channels.slice().sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
-    html += '<div style="font-size:12px; font-weight:600; margin-bottom:8px; color:var(--text-secondary);">推奨集客チャネル</div>';
-    sortedCh.forEach(function(ch, idx) {
-      var score = ch.score || 0;
-      var isBest = (idx === 0);
-      var barColor = isBest ? '#6366f1' : (idx === 1 ? '#8b5cf6' : '#6b7280');
-      var medal = medals[idx] || '　';
-      html += '<div style="margin-bottom:8px; padding:10px; border-radius:8px; background:' + (isBest ? 'rgba(99,102,241,0.1)' : 'rgba(30,41,59,0.5)') + '; border:1px solid ' + (isBest ? 'rgba(99,102,241,0.3)' : 'rgba(99,102,241,0.1)') + ';">' +
-        '<div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">' +
-        '<span style="font-size:16px;">' + medal + '</span>' +
-        '<span style="font-weight:700; font-size:13px; color:var(--text-primary);">' + escapeHtml(ch.name || '') + '</span>' +
-        '<span style="font-size:18px; font-weight:800; color:' + barColor + '; margin-left:auto;">' + score + '<span style="font-size:11px; font-weight:400;">点</span></span>' +
-        (isBest ? '<span style="background:#6366f1; color:#fff; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px;">推奨</span>' : '') +
-        '</div>' +
-        '<div style="height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden; margin-bottom:4px;">' +
-        '<div style="height:100%; width:' + score + '%; background:' + barColor + '; border-radius:3px;"></div></div>' +
-        (ch.detail ? '<div style="font-size:11px; color:var(--text-muted);">📋 ' + escapeHtml(ch.detail) + '</div>' : '') +
-        '<div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">→ ' + escapeHtml(ch.reason || '') + '</div>' +
-        '</div>';
+    sortedProfs.forEach(function(prof, idx) {
+      var score = prof.suitability_score || 0;
+      var isTop = (idx === 0);
+      var barColor = isTop ? 'linear-gradient(90deg,#f59e0b,#f97316)' : 'linear-gradient(90deg,#6366f1,#8b5cf6)';
+      html += '<div style="margin-bottom:10px;">';
+      html += '<div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">';
+      html += '<span style="font-size:16px; width:24px; text-align:center;">' + (prof.icon || '⚖️') + '</span>';
+      html += '<span style="font-size:13px; font-weight:' + (isTop ? '700' : '600') + '; flex:1; color:' + (isTop ? '#f59e0b' : 'var(--text-primary)') + ';">' + escapeHtml(prof.name || '') + '</span>';
+      html += '<span style="font-size:16px; font-weight:800; color:' + (isTop ? '#f59e0b' : '#6366f1') + '; min-width:42px; text-align:right;">' + score + '<span style="font-size:10px; font-weight:400; color:var(--text-muted);">点</span></span>';
+      html += '</div>';
+      html += '<div style="height:10px; background:rgba(255,255,255,0.08); border-radius:5px; overflow:hidden;">';
+      html += '<div style="height:100%; width:' + score + '%; background:' + barColor + '; border-radius:5px;"></div>';
+      html += '</div>';
+      // 主要ニーズタグ
+      if (prof.primary_needs && prof.primary_needs.length > 0) {
+        html += '<div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:4px;">';
+        prof.primary_needs.slice(0, 3).forEach(function(need) {
+          html += '<span style="font-size:10px; padding:1px 6px; border-radius:10px; background:rgba(99,102,241,0.1); color:#6366f1; border:1px solid rgba(99,102,241,0.2);">💡 ' + escapeHtml(need) + '</span>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
     });
 
-    if (mc.best_channel) {
-      html += '<div style="margin-top:8px; padding:8px 12px; background:rgba(99,102,241,0.1); border-radius:8px; font-size:12px; color:#6366f1; font-weight:600;">🏆 最推奨チャネル: ' + escapeHtml(mc.best_channel) + '</div>';
-    }
-
-    if (mc.strategy_summary) {
-      html += '<div class="summary-box" style="margin-top:10px"><div class="summary-box__title">💡 集客戦略の提言</div><div class="summary-box__text">' + escapeHtml(mc.strategy_summary) + '</div></div>';
-    }
     html += '</div></div>';
   }
 
@@ -1017,12 +974,6 @@ function startCheckout() {
 async function _doCheckout() {
   if (!currentArea || !currentUser) return;
 
-  var shigyoType = currentShigyoType || (analysisData && analysisData.shigyoType);
-  if (!shigyoType) {
-    alert('士業の種別が選択されていません。再分析してください。');
-    return;
-  }
-
   // 決済リダイレクト前に分析データを保存（戻ってきた時に復元するため）
   if (analysisData) {
     try {
@@ -1047,7 +998,7 @@ async function _doCheckout() {
     var token = session.data.session ? session.data.session.access_token : null;
     if (!token) throw new Error('認証トークンが取得できません。再ログインしてください。');
 
-    var purchaseKey = currentArea.fullLabel + '__' + shigyoType.code;
+    var purchaseKey = currentArea.fullLabel;
 
     var res = await fetch(WORKER_BASE + '/api/checkout', {
       method: 'POST',
@@ -1059,8 +1010,6 @@ async function _doCheckout() {
         area: purchaseKey,
         area_code: currentArea.code || '',
         service: 'ai-shigyo',
-        shigyo_type: shigyoType.name,
-        shigyo_code: shigyoType.code,
         success_url: window.location.origin + window.location.pathname + '?session_id={CHECKOUT_SESSION_ID}',
         cancel_url: window.location.origin + window.location.pathname
       })
@@ -1216,23 +1165,11 @@ async function showHistoryModal() {
       } else {
         listEl.innerHTML = '';
         purchases.forEach(function(p) {
-          // area_name は "エリア名__shigyoCode" 形式の可能性があるため表示用に整形
-          var displayName = p.area_name;
-          var parts = displayName.split('__');
-          var areaLabel = parts[0];
-          var shigyoCode = parts[1] || '';
-          var shigyoLabel = '';
-          for (var ti = 0; ti < SHIGYO_TYPES.length; ti++) {
-            if (SHIGYO_TYPES[ti].code === shigyoCode) {
-              shigyoLabel = ' (' + SHIGYO_TYPES[ti].name + ')';
-              break;
-            }
-          }
-
+          var areaLabel = p.area_name;
           var btn = document.createElement('button');
           btn.className = 'area-select-btn';
           btn.innerHTML = '<span style="font-size:20px;">✅</span>' +
-            '<div><div style="font-weight:700;">' + escapeHtml(areaLabel + shigyoLabel) + '</div>' +
+            '<div><div style="font-weight:700;">' + escapeHtml(areaLabel) + ' 全6士業比較</div>' +
             '<div style="font-size:11px; color:var(--text-muted);">購入日: ' + new Date(p.purchased_at).toLocaleDateString('ja-JP') + '</div></div>';
           btn.addEventListener('click', async function() {
             document.getElementById('history-modal').classList.remove('active');
@@ -1241,20 +1178,14 @@ async function showHistoryModal() {
             if (dbData) {
               analysisData = dbData;
               currentArea = dbData.area;
-              currentShigyoType = dbData.shigyoType;
               isPurchased = true;
               areaInput.value = dbData.area.fullLabel;
-              // 士業種別セレクトを復元
-              var sel = document.getElementById('shigyo-type-select');
-              if (sel && dbData.shigyoType) sel.value = dbData.shigyoType.code;
               document.getElementById('purchase-prompt').style.display = 'none';
               renderResults(analysisData, true);
               showResults();
             } else {
-              // DBにデータがなければ従来通り再分析
+              // DBにデータがなければ再分析
               areaInput.value = areaLabel;
-              var sel2 = document.getElementById('shigyo-type-select');
-              if (sel2 && shigyoCode) sel2.value = shigyoCode;
               startAnalysis();
             }
           });
@@ -1279,28 +1210,15 @@ function showHistoryFromLocalStorage(listEl) {
   } else {
     listEl.innerHTML = '';
     purchases.forEach(function(p) {
-      var displayName = p.area;
-      var parts = displayName.split('__');
-      var areaLabel = parts[0];
-      var shigyoCode = parts[1] || '';
-      var shigyoLabel = '';
-      for (var ti = 0; ti < SHIGYO_TYPES.length; ti++) {
-        if (SHIGYO_TYPES[ti].code === shigyoCode) {
-          shigyoLabel = ' (' + SHIGYO_TYPES[ti].name + ')';
-          break;
-        }
-      }
-
+      var areaLabel = p.area;
       var btn = document.createElement('button');
       btn.className = 'area-select-btn';
       btn.innerHTML = '<span style="font-size:20px;">✅</span>' +
-        '<div><div style="font-weight:700;">' + escapeHtml(areaLabel + shigyoLabel) + '</div>' +
+        '<div><div style="font-weight:700;">' + escapeHtml(areaLabel) + ' 全6士業比較</div>' +
         '<div style="font-size:11px; color:var(--text-muted);">購入日: ' + new Date(p.date).toLocaleDateString('ja-JP') + '</div></div>';
       btn.addEventListener('click', function() {
         document.getElementById('history-modal').classList.remove('active');
         areaInput.value = areaLabel;
-        var sel = document.getElementById('shigyo-type-select');
-        if (sel && shigyoCode) sel.value = shigyoCode;
         startAnalysis();
       });
       listEl.appendChild(btn);
@@ -1322,7 +1240,6 @@ async function exportPDF() {
 
   var m = analysisData.shigyo;
   var area = analysisData.area;
-  var shigyoType = analysisData.shigyoType || { name: '士業事務所', icon: '⚖️' };
   var dateStr = new Date().toLocaleDateString('ja-JP');
 
   var html = '<div style="max-width:100%; font-family:\'Noto Sans JP\',sans-serif; color:#000; background:#fff; font-size:12px; line-height:1.6; padding:0;">';
@@ -1341,7 +1258,7 @@ async function exportPDF() {
   // ===== ヘッダー =====
   html += '<div style="text-align:center; margin-bottom:10px; padding-bottom:8px; border-bottom:3px solid #6366f1;">';
   html += '<div style="font-size:22px; font-weight:800; color:#0f172a;">AI士業商圏レポート</div>';
-  html += '<div style="font-size:16px; color:#6366f1; font-weight:700; margin-top:4px;">' + escapeHtml(area.fullLabel) + ' × ' + escapeHtml(shigyoType.name) + '</div>';
+  html += '<div style="font-size:16px; color:#6366f1; font-weight:700; margin-top:4px;">' + escapeHtml(area.fullLabel) + ' 全6士業 一括比較分析</div>';
   html += '<div style="font-size:9px; color:#64748b; margin-top:4px;">分析日: ' + dateStr + ' | データソース: 政府統計(e-Stat) + AI分析(Gemini)</div>';
   html += '</div>';
 
@@ -1358,101 +1275,50 @@ async function exportPDF() {
     html += '</table></div>';
   }
 
-  // ===== AI士業商圏分析 =====
-  if (m.shigyo_summary) {
-    html += '<div style="' + S + '"><div style="' + T + '">2. AI士業商圏分析</div>';
-    html += '<div style="font-size:11px; color:#1e293b; white-space:pre-wrap; line-height:1.7; padding:4px 2px;">' + escapeHtml(m.shigyo_summary) + '</div>';
+  // ===== 2. エリア総評 =====
+  if (m.overall_summary) {
+    html += '<div style="' + S + '"><div style="' + T + '">2. エリア全体総評</div>';
+    html += '<div style="font-size:11px; color:#1e293b; white-space:pre-wrap; line-height:1.7; padding:4px 2px;">' + escapeHtml(m.overall_summary) + '</div>';
     html += '</div>';
   }
 
-  // ===== 競合状況 =====
-  if (m.competitor_analysis) {
-    var ca = m.competitor_analysis;
-    html += '<div style="' + S + '"><div style="' + T + '">3. 同業事務所数・競合状況</div>';
+  // ===== 3. 開業適性ランキング =====
+  if (m.recommended_top3 && m.recommended_top3.length > 0) {
+    html += '<div style="' + S + '"><div style="' + T + '">3. 開業適性ランキング TOP3</div>';
     html += '<table style="' + TBL + '">';
-    html += r('推計事務所数', formatNumber(ca.estimated_offices) + ' 件');
-    html += r('1万人あたり事務所数', (ca.offices_per_10000_population || '—'));
-    html += r('全国平均（1万人あたり）', (ca.national_avg_per_10000 || '—'));
-    html += r('都道府県平均（1万人あたり）', (ca.prefecture_avg_per_10000 || '—'));
-    html += r('競合レベル', ca.competition_level || '—');
-    html += r('推計従事者数', formatNumber(ca.total_professionals) + ' 人');
-    html += r('事務所あたり平均年商', (ca.avg_revenue_per_office ? formatNumber(ca.avg_revenue_per_office) + ' 万円' : '—'));
-    html += r('市場規模推計', (ca.market_size_estimate ? formatNumber(ca.market_size_estimate) + ' 万円' : '—'));
-    if (ca.nearby_major_firms && ca.nearby_major_firms.length > 0) {
-      html += r('近隣主要事務所', ca.nearby_major_firms.join(', '));
-    }
-    if (ca.differentiation_opportunities && ca.differentiation_opportunities.length > 0) {
-      html += r('差別化の機会', ca.differentiation_opportunities.join(' / '));
-    }
+    html += '<tr><th style="' + TH + 'width:8%;">順位</th><th style="' + TH + 'width:30%;">士業</th><th style="' + TH + 'width:12%;">スコア</th><th style="' + TH + 'width:50%;">推奨理由</th></tr>';
+    m.recommended_top3.forEach(function(item) {
+      html += '<tr><td style="' + TD + 'text-align:center;">' + (item.rank || '') + '位</td>';
+      html += '<td style="' + TD + 'font-weight:700;">' + escapeHtml(item.name || '') + '</td>';
+      html += '<td style="' + TD + 'text-align:center; font-weight:700;">' + (item.score || '') + '点</td>';
+      html += '<td style="' + TD + 'font-size:10px;">' + escapeHtml(item.reason || '') + '</td></tr>';
+    });
     html += '</table></div>';
   }
 
-  // ===== 顧客層分析 =====
-  if (m.client_demographics) {
-    var cd = m.client_demographics;
-    html += '<div style="' + S + '"><div style="' + T + '">4. 顧客層分析</div>';
+  // ===== 4. 士業別詳細 =====
+  if (m.professions && m.professions.length > 0) {
+    html += '<div style="' + S + '"><div style="' + T + '">4. 士業別詳細比較</div>';
     html += '<table style="' + TBL + '">';
-    if (cd.individual_clients) {
-      var ic = cd.individual_clients;
-      html += r('個人顧客割合', (ic.pct || '—') + '%');
-      html += r('個人顧客 推計件数', formatNumber(ic.count) + ' 件/年');
-      html += r('個人顧客 平均報酬', (ic.avg_fee ? formatNumber(ic.avg_fee) + ' 円' : '—'));
-      if (ic.description) html += r('個人顧客 特性', ic.description);
-    }
-    if (cd.corporate_clients) {
-      var cc = cd.corporate_clients;
-      html += r('法人顧客割合', (cc.pct || '—') + '%');
-      html += r('法人顧客 推計件数', formatNumber(cc.count) + ' 件/年');
-      html += r('法人顧客 平均報酬', (cc.avg_fee ? formatNumber(cc.avg_fee) + ' 円' : '—'));
-      if (cc.description) html += r('法人顧客 特性', cc.description);
-    }
-    if (cd.primary_needs && cd.primary_needs.length > 0) {
-      html += r('主要ニーズ', cd.primary_needs.join(' / '));
-    }
-    if (cd.growth_sectors && cd.growth_sectors.length > 0) {
-      html += r('成長分野', cd.growth_sectors.join(' / '));
-    }
-    if (cd.seasonal_demand) html += r('繁忙期・季節需要', cd.seasonal_demand);
+    html += '<tr>';
+    html += '<th style="' + TH + 'width:20%;">士業</th>';
+    html += '<th style="' + TH + 'width:12%;">事務所数</th>';
+    html += '<th style="' + TH + 'width:10%;">競合</th>';
+    html += '<th style="' + TH + 'width:15%;">市場規模(万円)</th>';
+    html += '<th style="' + TH + 'width:10%;">適性スコア</th>';
+    html += '<th style="' + TH + 'width:33%;">サマリー</th>';
+    html += '</tr>';
+    m.professions.forEach(function(prof) {
+      html += '<tr>';
+      html += '<td style="' + TD + 'font-weight:700;">' + (prof.icon || '') + ' ' + escapeHtml(prof.name || '') + '</td>';
+      html += '<td style="' + TD + 'text-align:right;">' + formatNumber(prof.estimated_offices) + '</td>';
+      html += '<td style="' + TD + 'text-align:center;">' + escapeHtml(prof.competition_level || '—') + '</td>';
+      html += '<td style="' + TD + 'text-align:right;">' + formatNumber(prof.market_size_estimate) + '</td>';
+      html += '<td style="' + TD + 'text-align:center; font-weight:700;">' + (prof.suitability_score || '—') + '</td>';
+      html += '<td style="' + TD + 'font-size:10px;">' + escapeHtml(prof.summary || '') + '</td>';
+      html += '</tr>';
+    });
     html += '</table></div>';
-  }
-
-  // ===== 開業適性スコア =====
-  if (m.suitability_score) {
-    var ss = m.suitability_score;
-    html += '<div style="' + S + '"><div style="' + T + '">5. 開業適性スコア</div>';
-    html += '<table style="' + TBL + '">';
-    html += r('総合スコア（/100）', ss.overall_score || '—');
-    html += r('グレード', ss.grade || '—');
-    html += r('人口・需要規模スコア', ss.population_score || '—');
-    html += r('競合環境スコア', ss.competition_score || '—');
-    html += r('需要・ニーズスコア', ss.demand_score || '—');
-    html += r('アクセス・立地スコア', ss.accessibility_score || '—');
-    html += r('市場成長性スコア', ss.growth_score || '—');
-    if (ss.ai_recommendation) html += r('AI総合判定', ss.ai_recommendation);
-    html += '</table></div>';
-  }
-
-  // ===== 集客チャネル =====
-  if (m.marketing_channels) {
-    var mc = m.marketing_channels;
-    html += '<div style="' + S + '"><div style="' + T + '">6. 集客チャネル推奨</div>';
-    if (mc.channels && mc.channels.length > 0) {
-      html += '<table style="' + TBL + '">';
-      html += '<tr><th style="' + TH + 'width:26%;">チャネル</th><th style="' + TH + 'width:12%;">スコア</th><th style="' + TH + 'width:62%;">推奨理由</th></tr>';
-      mc.channels.forEach(function(ch) {
-        html += '<tr><td style="' + TD + '">' + escapeHtml(ch.name || '') + '</td>';
-        html += '<td style="' + TD + 'text-align:center; font-weight:700;">' + (ch.score || '') + '</td>';
-        html += '<td style="' + TD + 'font-size:10px;">' + escapeHtml(ch.reason || '') + '</td></tr>';
-      });
-      html += '</table>';
-    }
-    if (mc.best_channel) {
-      html += '<div style="margin-top:5px; padding:5px 8px; background:#eef2ff; border:1px solid #a5b4fc; border-radius:3px; font-size:11px; color:#3730a3;">最推奨チャネル: ' + escapeHtml(mc.best_channel) + '</div>';
-    }
-    if (mc.strategy_summary) {
-      html += '<div style="margin-top:5px; padding:5px 8px; background:#f0fdf4; border:1px solid #86efac; border-radius:3px; font-size:10px; color:#166534;">' + escapeHtml(mc.strategy_summary) + '</div>';
-    }
-    html += '</div>';
   }
 
   // ===== フッター =====
@@ -1466,7 +1332,7 @@ async function exportPDF() {
   if (!printWin) { alert('ポップアップがブロックされました。ポップアップを許可してください。'); return; }
 
   printWin.document.write('<!DOCTYPE html><html><head><meta charset="utf-8">');
-  printWin.document.write('<title>士業商圏分析_' + escapeHtml(area.fullLabel) + '_' + escapeHtml(shigyoType.name) + '</title>');
+  printWin.document.write('<title>士業商圏分析_' + escapeHtml(area.fullLabel) + '_全6士業比較</title>');
   printWin.document.write('<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700;800&display=swap" rel="stylesheet">');
   printWin.document.write('<style>');
   printWin.document.write('*{margin:0;padding:0;box-sizing:border-box;}');
@@ -1497,38 +1363,35 @@ function exportExcel() {
 
   var m = analysisData.shigyo;
   var area = analysisData.area;
-  var shigyoType = analysisData.shigyoType || { name: '士業事務所' };
   var wb = XLSX.utils.book_new();
 
   var merges = [];
   var rowHeights = [];
   var rows = [];
 
-  function pushRow(cells) {
-    rows.push(cells);
-  }
-
-  // ===== タイトル行 =====
-  pushRow(['AI士業商圏レポート', '', '', '']);
-  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } });
-
-  pushRow(['エリア', area.fullLabel, '', '']);
-  pushRow(['士業種別', shigyoType.name, '', '']);
-  pushRow(['分析日', new Date().toLocaleDateString('ja-JP'), '', '']);
-  pushRow(['データソース', '政府統計(e-Stat) + AI分析(Gemini)', '', '']);
+  function pushRow(cells) { rows.push(cells); }
 
   function pushSectionHeader(title) {
-    pushRow(['', '', '', '']); // 区切り空行
+    pushRow(['', '', '', '', '', '']);
     var idx = rows.length;
-    pushRow([title, '', '', '']);
-    merges.push({ s: { r: idx, c: 0 }, e: { r: idx, c: 3 } });
+    pushRow([title, '', '', '', '', '']);
+    merges.push({ s: { r: idx, c: 0 }, e: { r: idx, c: 5 } });
   }
 
   function pushDataRow(label, val, unit) {
     var displayVal = (val === null || val === undefined || val === '') ? '—' : String(val);
     if (unit) displayVal = displayVal + unit;
-    pushRow([label, displayVal, '', '']);
+    pushRow([label, displayVal, '', '', '', '']);
   }
+
+  // ===== タイトル行 =====
+  pushRow(['AI士業商圏レポート 全6士業 一括比較分析', '', '', '', '', '']);
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } });
+
+  pushRow(['エリア', area.fullLabel, '', '', '', '']);
+  pushRow(['分析対象士業', '税理士・弁護士・社労士・行政書士・司法書士・公認会計士', '', '', '', '']);
+  pushRow(['分析日', new Date().toLocaleDateString('ja-JP'), '', '', '', '']);
+  pushRow(['データソース', '政府統計(e-Stat) + AI分析(Gemini)', '', '', '', '']);
 
   // ===== ① 人口・世帯データ =====
   pushSectionHeader('① 人口・世帯データ');
@@ -1539,109 +1402,82 @@ function exportExcel() {
   pushDataRow('人口増減率', pop.growth_rate, '');
   if (pop.source) pushDataRow('データソース', pop.source, '');
 
-  // ===== ② 競合状況 =====
-  pushSectionHeader('② 同業事務所数・競合状況');
-  var ca = m.competitor_analysis || {};
-  pushDataRow('推計事務所数', ca.estimated_offices ? formatNumber(ca.estimated_offices) : '', '件');
-  pushDataRow('1万人あたり事務所数', ca.offices_per_10000_population, '');
-  pushDataRow('全国平均（1万人あたり）', ca.national_avg_per_10000, '');
-  pushDataRow('都道府県平均（1万人あたり）', ca.prefecture_avg_per_10000, '');
-  pushDataRow('競合レベル', ca.competition_level, '');
-  pushDataRow('推計従事者数', ca.total_professionals ? formatNumber(ca.total_professionals) : '', '人');
-  pushDataRow('事務所あたり平均年商', ca.avg_revenue_per_office ? formatNumber(ca.avg_revenue_per_office) : '', '万円');
-  pushDataRow('市場規模推計', ca.market_size_estimate ? formatNumber(ca.market_size_estimate) : '', '万円');
-  if (ca.nearby_major_firms && ca.nearby_major_firms.length > 0) {
-    pushDataRow('近隣主要事務所', ca.nearby_major_firms.join(', '), '');
-  }
-  if (ca.differentiation_opportunities && ca.differentiation_opportunities.length > 0) {
-    pushDataRow('差別化の機会', ca.differentiation_opportunities.join(' / '), '');
+  // ===== ② エリア総評 =====
+  pushSectionHeader('② エリア全体総評');
+  if (m.overall_summary) {
+    var summaryText = m.overall_summary.replace(/\r\n|\r|\n/g, '\r\n');
+    var summaryRowIdx = rows.length;
+    pushRow([summaryText, '', '', '', '', '']);
+    merges.push({ s: { r: summaryRowIdx, c: 0 }, e: { r: summaryRowIdx, c: 5 } });
+    rowHeights.push({ idx: summaryRowIdx, hpx: 120 });
   }
 
-  // ===== ③ 顧客層分析 =====
-  pushSectionHeader('③ 顧客層分析');
-  var cd = m.client_demographics || {};
-  if (cd.individual_clients) {
-    var ic = cd.individual_clients;
-    pushDataRow('個人顧客割合', ic.pct || '', '%');
-    pushDataRow('個人顧客 推計件数', ic.count ? formatNumber(ic.count) : '', '件/年');
-    pushDataRow('個人顧客 平均報酬', ic.avg_fee ? formatNumber(ic.avg_fee) : '', '円');
-    if (ic.description) pushDataRow('個人顧客 特性', ic.description, '');
-  }
-  if (cd.corporate_clients) {
-    var cc = cd.corporate_clients;
-    pushDataRow('法人顧客割合', cc.pct || '', '%');
-    pushDataRow('法人顧客 推計件数', cc.count ? formatNumber(cc.count) : '', '件/年');
-    pushDataRow('法人顧客 平均報酬', cc.avg_fee ? formatNumber(cc.avg_fee) : '', '円');
-    if (cc.description) pushDataRow('法人顧客 特性', cc.description, '');
-  }
-  if (cd.primary_needs && cd.primary_needs.length > 0) {
-    pushDataRow('主要ニーズ', cd.primary_needs.join(' / '), '');
-  }
-  if (cd.growth_sectors && cd.growth_sectors.length > 0) {
-    pushDataRow('成長分野', cd.growth_sectors.join(' / '), '');
-  }
-  if (cd.seasonal_demand) pushDataRow('繁忙期・季節需要', cd.seasonal_demand, '');
-
-  // ===== ④ 開業適性スコア =====
-  pushSectionHeader('④ 開業適性スコア');
-  var ss = m.suitability_score || {};
-  pushDataRow('総合スコア（/100）', ss.overall_score, '');
-  pushDataRow('グレード', ss.grade, '');
-  pushDataRow('人口・需要規模スコア', ss.population_score, '');
-  pushDataRow('競合環境スコア', ss.competition_score, '');
-  pushDataRow('需要・ニーズスコア', ss.demand_score, '');
-  pushDataRow('アクセス・立地スコア', ss.accessibility_score, '');
-  pushDataRow('市場成長性スコア', ss.growth_score, '');
-  if (ss.ai_recommendation) pushDataRow('AI総合判定', ss.ai_recommendation, '');
-
-  // ===== ⑤ 集客チャネル =====
-  pushSectionHeader('⑤ 集客チャネル推奨');
-  var mc = m.marketing_channels || {};
-  var channels = mc.channels || [];
-  if (channels.length > 0) {
-    pushRow(['', '', '', '']); // 区切り空行
-    var chHeaderIdx = rows.length;
-    pushRow(['推奨集客チャネル', '', '', '']);
-    merges.push({ s: { r: chHeaderIdx, c: 0 }, e: { r: chHeaderIdx, c: 3 } });
-    pushRow(['チャネル名', 'スコア', '施策詳細', '推奨理由']);
-    channels.forEach(function(ch) {
-      pushRow([
-        ch.name || '',
-        ch.score || '',
-        ch.detail || '',
-        ch.reason || ''
-      ]);
+  // ===== ③ 開業適性ランキング =====
+  pushSectionHeader('③ 開業適性ランキング TOP3');
+  if (m.recommended_top3 && m.recommended_top3.length > 0) {
+    var rankHeaderIdx = rows.length;
+    pushRow(['順位', '士業', 'スコア', '推奨理由', '', '']);
+    merges.push({ s: { r: rankHeaderIdx, c: 3 }, e: { r: rankHeaderIdx, c: 5 } });
+    m.recommended_top3.forEach(function(item) {
+      var reasonRow = rows.length;
+      pushRow([(item.rank || '') + '位', item.name || '', (item.score || '') + '点', item.reason || '', '', '']);
+      merges.push({ s: { r: reasonRow, c: 3 }, e: { r: reasonRow, c: 5 } });
     });
   }
-  pushDataRow('最も推奨チャネル', mc.best_channel, '');
-  pushDataRow('集客戦略サマリー', mc.strategy_summary, '');
 
-  // ===== ⑥ AI士業商圏分析サマリー =====
-  pushSectionHeader('⑥ AI士業商圏分析サマリー');
-  var summaryText = m.shigyo_summary || '';
-  var formattedSummary = summaryText.replace(/\r\n|\r|\n/g, '\r\n');
-  var summaryRowIdx = rows.length;
-  pushRow([formattedSummary, '', '', '']);
-  merges.push({ s: { r: summaryRowIdx, c: 0 }, e: { r: summaryRowIdx, c: 3 } });
-  rowHeights.push({ idx: summaryRowIdx, hpx: 200 });
+  // ===== ④ 士業別詳細比較 =====
+  pushSectionHeader('④ 士業別詳細比較');
+  if (m.professions && m.professions.length > 0) {
+    pushRow(['士業', '事務所数', '競合レベル', '市場規模(万円)', '開業適性スコア', '推奨集客チャネル']);
+    m.professions.forEach(function(prof) {
+      pushRow([
+        (prof.icon || '') + ' ' + (prof.name || ''),
+        prof.estimated_offices ? formatNumber(prof.estimated_offices) : '—',
+        prof.competition_level || '—',
+        prof.market_size_estimate ? formatNumber(prof.market_size_estimate) : '—',
+        prof.suitability_score || '—',
+        prof.best_channel || '—'
+      ]);
+    });
+
+    // 各士業の詳細
+    m.professions.forEach(function(prof) {
+      pushSectionHeader('   ' + (prof.icon || '') + ' ' + (prof.name || '') + ' 詳細');
+      pushDataRow('推計事務所数', prof.estimated_offices ? formatNumber(prof.estimated_offices) : '—', '件');
+      pushDataRow('1万人あたり事務所密度', prof.offices_per_10000 || '—', '');
+      pushDataRow('競合レベル', prof.competition_level || '—', '');
+      pushDataRow('推計市場規模', prof.market_size_estimate ? formatNumber(prof.market_size_estimate) : '—', '万円');
+      pushDataRow('開業適性スコア', prof.suitability_score || '—', '/100点');
+      pushDataRow('個人顧客比率', prof.individual_client_pct || '—', '%');
+      pushDataRow('法人顧客比率', prof.corporate_client_pct || '—', '%');
+      pushDataRow('推奨集客チャネル', prof.best_channel || '—', '');
+      if (prof.primary_needs && prof.primary_needs.length > 0) {
+        pushDataRow('主要ニーズ', prof.primary_needs.join(' / '), '');
+      }
+      if (prof.seasonal_demand) pushDataRow('繁忙期・季節需要', prof.seasonal_demand, '');
+      if (prof.summary) {
+        var profSummaryIdx = rows.length;
+        pushRow(['分析サマリー', prof.summary, '', '', '', '']);
+        merges.push({ s: { r: profSummaryIdx, c: 1 }, e: { r: profSummaryIdx, c: 5 } });
+        rowHeights.push({ idx: profSummaryIdx, hpx: 60 });
+      }
+    });
+  }
 
   // ===== シート生成 =====
   var ws = XLSX.utils.aoa_to_sheet(rows);
 
-  ws['!cols'] = [{ wch: 28 }, { wch: 50 }, { wch: 30 }, { wch: 40 }];
+  ws['!cols'] = [{ wch: 26 }, { wch: 20 }, { wch: 14 }, { wch: 20 }, { wch: 14 }, { wch: 36 }];
   ws['!merges'] = merges;
 
-  // 行高さの適用
   var wsRows = [];
   rowHeights.forEach(function(rh) { wsRows[rh.idx] = { hpx: rh.hpx }; });
   ws['!rows'] = wsRows;
 
-  // xlsx-js-style: セルスタイルを適用
   var thinBorder = { style: 'thin', color: { rgb: 'CCCCCC' } };
   var borders = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
   var wrapAlign = { wrapText: true, vertical: 'top' };
 
-  // 全セルにwrapText + 罫線を適用
   var range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
   for (var R = range.s.r; R <= range.e.r; R++) {
     for (var C = range.s.c; C <= range.e.c; C++) {
@@ -1651,18 +1487,16 @@ function exportExcel() {
     }
   }
 
-  // タイトル行(row 0)を太字・大きく
   var titleAddr = XLSX.utils.encode_cell({ r: 0, c: 0 });
   if (ws[titleAddr]) {
-    ws[titleAddr].s = { alignment: { horizontal: 'center', vertical: 'center' }, font: { name: 'Yu Gothic', sz: 14, bold: true }, border: borders };
+    ws[titleAddr].s = { alignment: { horizontal: 'center', vertical: 'center' }, font: { name: 'Yu Gothic', sz: 13, bold: true }, border: borders };
   }
 
-  // セクションヘッダー行を太字・背景色付き（インディゴ系）
   merges.forEach(function(mg) {
     var hdrAddr = XLSX.utils.encode_cell({ r: mg.s.r, c: 0 });
     if (ws[hdrAddr] && ws[hdrAddr].v && typeof ws[hdrAddr].v === 'string') {
       var val = ws[hdrAddr].v;
-      if (val.match(/^[①-⑥]/) || val.match(/^\[/) || val.match(/^推奨/) || val === 'AI士業商圏レポート') {
+      if (val.match(/^[①-⑤]/) || val.match(/^\s+[📊⚖️🏢📝🏛️🔢]/) || val === 'AI士業商圏レポート 全6士業 一括比較分析') {
         ws[hdrAddr].s = {
           alignment: wrapAlign,
           font: { name: 'Yu Gothic', sz: 11, bold: true, color: { rgb: '3730A3' } },
@@ -1673,15 +1507,9 @@ function exportExcel() {
     }
   });
 
-  // AI士業商圏分析サマリー行の特別スタイル
-  var summaryAddr = XLSX.utils.encode_cell({ r: summaryRowIdx, c: 0 });
-  if (ws[summaryAddr]) {
-    ws[summaryAddr].s = { alignment: wrapAlign, font: { name: 'Yu Gothic', sz: 10 }, border: borders };
-  }
+  XLSX.utils.book_append_sheet(wb, ws, '全6士業比較レポート');
 
-  XLSX.utils.book_append_sheet(wb, ws, '士業商圏分析レポート');
-
-  var fileName = '士業商圏分析_' + area.fullLabel + '_' + shigyoType.name + '_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+  var fileName = '士業商圏分析_' + area.fullLabel + '_全6士業比較_' + new Date().toISOString().slice(0, 10) + '.xlsx';
   XLSX.writeFile(wb, fileName);
 }
 
@@ -1712,12 +1540,9 @@ function hidePurchaseFloat() {
 function resetAll() {
   analysisData = null;
   currentArea = null;
-  currentShigyoType = null;
   isPurchased = false;
   _analysisRunning = false;
   areaInput.value = '';
-  var sel = document.getElementById('shigyo-type-select');
-  if (sel) sel.value = '';
   hideResults();
   hideProgress();
   hideError();
@@ -1733,11 +1558,6 @@ function setLoading(isLoading) {
   areaInput.disabled = isLoading;
   areaInput.style.opacity = isLoading ? '0.5' : '';
   areaInput.style.cursor = isLoading ? 'not-allowed' : '';
-  var sel = document.getElementById('shigyo-type-select');
-  if (sel) {
-    sel.disabled = isLoading;
-    sel.style.opacity = isLoading ? '0.5' : '';
-  }
 }
 
 function showProgress() { progressSection.classList.add('is-active'); }
