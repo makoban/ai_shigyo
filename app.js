@@ -1,5 +1,5 @@
 // ========================================
-// AI士業商圏分析レポート v1.1
+// AI士業商圏分析レポート v1.2
 // エリア入力 + 士業種別選択 → 政府統計 + AI分析 → プレビュー/課金
 // ========================================
 
@@ -269,7 +269,7 @@ async function handleAuthSubmit(e) {
         redirectTo: window.location.origin + window.location.pathname
       });
       if (result.error) throw result.error;
-      errorEl.style.color = '#10b981';
+      errorEl.style.color = '#8b5cf6';
       errorEl.textContent = 'リセットメールを送信しました。メールのリンクからパスワードを再設定してください。';
       return;
     } else if (mode === 'login') {
@@ -965,7 +965,7 @@ function renderResults(data, purchased) {
 
   // ⑤ 士業別詳細比較（有料）
   if (m.professions && m.professions.length > 0) {
-    var compLevelColor = { '低': '#10b981', '中': '#f59e0b', '高': '#f97316', '飽和': '#ef4444' };
+    var compLevelColor = { '低': '#8b5cf6', '中': '#f59e0b', '高': '#f97316', '飽和': '#ef4444' };
 
     html += '<div class="result-card' + paidClass + '" data-section="paid">' +
       '<div class="result-card__header"><div class="result-card__icon">📊</div>' +
@@ -1495,7 +1495,7 @@ async function exportPDF() {
 
   // ===== フッター =====
   html += '<div style="text-align:center; margin-top:10px; padding-top:6px; border-top:1px solid #e2e8f0;">';
-  html += '<div style="font-size:9px; color:#94a3b8;">AI士業商圏レポート v1.1 | Powered by AI + 政府統計データ | ' + dateStr + '</div>';
+  html += '<div style="font-size:9px; color:#94a3b8;">AI士業商圏レポート v1.2 | Powered by AI + 政府統計データ | ' + dateStr + '</div>';
   html += '</div>';
   html += '</div>'; // ルートdiv閉じ
 

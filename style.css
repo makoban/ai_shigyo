@@ -1,5 +1,5 @@
 /* ========================================
-   AI出店商圏レポート - Design System
+   AI士業商圏レポート - Design System
    ======================================== */
 
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap');
@@ -11,10 +11,10 @@
   --bg-card-hover: rgba(30, 41, 59, 0.9);
   --glass: rgba(255, 255, 255, 0.05);
   --glass-border: rgba(255, 255, 255, 0.08);
-  --accent: #10b981;
-  --accent-glow: rgba(16, 185, 129, 0.3);
-  --accent-gradient: linear-gradient(135deg, #10b981, #059669);
-  --accent-green: #10b981;
+  --accent: #8b5cf6;
+  --accent-glow: rgba(139, 92, 246, 0.3);
+  --accent-gradient: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  --accent-purple: #8b5cf6;
   --accent-amber: #f59e0b;
   --accent-rose: #f43f5e;
   --text-primary: #f1f5f9;
@@ -75,14 +75,14 @@ body {
 .bg-blob--1 {
   top: -20%; right: -10%;
   width: 600px; height: 600px;
-  background: #10b981;
+  background: #8b5cf6;
   animation: float 20s ease-in-out infinite;
 }
 
 .bg-blob--2 {
   bottom: -20%; left: -10%;
   width: 500px; height: 500px;
-  background: #059669;
+  background: #7c3aed;
   animation: float 25s ease-in-out infinite reverse;
 }
 
@@ -183,7 +183,7 @@ body {
 .hero__badge-dot {
   width: 8px;
   height: 8px;
-  background: var(--accent-green);
+  background: var(--accent-purple);
   border-radius: 50%;
   animation: pulse 2s ease-in-out infinite;
 }
@@ -484,7 +484,7 @@ body {
 }
 
 .progress__step.is-done {
-  border-color: var(--accent-green);
+  border-color: var(--accent-purple);
   background: rgba(16, 185, 129, 0.05);
 }
 
@@ -510,7 +510,7 @@ body {
 }
 
 .progress__step.is-done .progress__step-icon {
-  background: var(--accent-green);
+  background: var(--accent-purple);
   border-color: transparent;
   color: #fff;
 }
@@ -526,7 +526,7 @@ body {
 }
 
 .progress__step.is-done .progress__step-text {
-  color: var(--accent-green);
+  color: var(--accent-purple);
 }
 
 /* ========================================
@@ -630,7 +630,7 @@ body {
 }
 
 .result-card--company::before { background: var(--accent-gradient); }
-.result-card--population::before { background: linear-gradient(180deg, #10b981, #059669); }
+.result-card--population::before { background: linear-gradient(180deg, #8b5cf6, #7c3aed); }
 .result-card--housing::before { background: linear-gradient(180deg, #f59e0b, #d97706); }
 .result-card--land::before { background: linear-gradient(180deg, #8b5cf6, #7c3aed); }
 .result-card--market::before { background: linear-gradient(180deg, #f43f5e, #e11d48); }
@@ -718,7 +718,7 @@ body {
 }
 
 .data-table .highlight--green {
-  color: var(--accent-green);
+  color: var(--accent-purple);
 }
 
 .data-table .highlight--amber {
@@ -1031,7 +1031,7 @@ body {
   color: #94a3b8;
 }
 .progress__step.completed .progress__step-title {
-  color: #10b981;
+  color: #8b5cf6;
 }
 
 /* ========================================
@@ -1071,7 +1071,7 @@ body {
   font-weight: bold;
   color: #fff;
 }
-.log-item.success { color: #10b981; }
+.log-item.success { color: #8b5cf6; }
 .log-item.info { color: #3b82f6; }
 .log-item.warn { color: #f59e0b; }
 .log-item.error { color: #ef4444; }
@@ -1415,7 +1415,7 @@ body {
 }
 
 .badge-optional {
-  background: var(--accent-green);
+  background: var(--accent-purple);
   color: #fff;
   font-size: 10px;
   padding: 2px 6px;
@@ -1723,7 +1723,7 @@ body {
 }
 
 .pricing-info__badge--free {
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
   color: #fff;
 }
 
@@ -1779,7 +1779,7 @@ body {
    ======================================== */
 .badge-free {
   display: inline-block;
-  background: linear-gradient(135deg, #10b981, #059669);
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
@@ -2035,7 +2035,7 @@ body {
 /* ========================================
    ai_shoken - Log items (fix class names)
    ======================================== */
-.log-item--success { color: #10b981; }
+.log-item--success { color: #8b5cf6; }
 .log-item--info { color: #3b82f6; }
 .log-item--error { color: #ef4444; }
 
