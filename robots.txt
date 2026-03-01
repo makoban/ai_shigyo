@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ai-shigyo.bantex.jp/sitemap.xml
